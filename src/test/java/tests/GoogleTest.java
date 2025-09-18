@@ -7,13 +7,16 @@ import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import org.assertj.core.api.SoftAssertions; // ✅ para soft assert
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Duration;
 
+// ----------------------------
 // Singleton WebDriver
+// ----------------------------
 class DriverManager {
     private static WebDriver driver;
     private static WebDriverWait wait;
@@ -33,9 +36,7 @@ class DriverManager {
     }
 
     public static WebDriverWait getWait() {
-        if (wait == null) {
-            getDriver();
-        }
+        if (wait == null) getDriver();
         return wait;
     }
 
@@ -48,7 +49,9 @@ class DriverManager {
     }
 }
 
-// Page Object para la página de Selección
+// ----------------------------
+// Page Object: Selección
+// ----------------------------
 class SeleccionPage {
     private WebDriver driver;
     private WebDriverWait wait;
@@ -63,6 +66,9 @@ class SeleccionPage {
         this.wait = wait;
     }
 
+    // ----------------------------
+    // Acciones de la página
+    // ----------------------------
     public String getTitulo() {
         return wait.until(ExpectedConditions.visibilityOfElementLocated(titulo)).getText();
     }
@@ -75,9 +81,47 @@ class SeleccionPage {
         driver.findElement(inputLocalidad).sendKeys(nombre);
         driver.findElement(submitButton).click();
     }
+
+    // ----------------------------
+    // Validaciones soft assert (verify)
+    // ----------------------------
+    public void verifyTitulo(String expected, SoftAssertions soft) {
+        String actual = getTitulo();
+        soft.assertThat(actual)
+                .as("Verificando título de la página")
+                .isEqualTo(expected);
+    }
 }
 
-// Clase de tests
+// ----------------------------
+// Builder para crear Localidad (ejemplo)
+// ----------------------------
+class Localidad {
+    private String nombre;
+
+    private Localidad(String nombre) {
+        this.nombre = nombre;
+    }
+
+    public String getNombre() { return nombre; }
+
+    public static class Builder {
+        private String nombre;
+
+        public Builder setNombre(String nombre) {
+            this.nombre = nombre;
+            return this;
+        }
+
+        public Localidad build() {
+            return new Localidad(nombre);
+        }
+    }
+}
+
+// ----------------------------
+// Test Class
+// ----------------------------
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GoogleTest {
 
@@ -90,33 +134,60 @@ class GoogleTest {
         wait = DriverManager.getWait();
     }
 
-    @Test
-    void testBrowserActions() throws IOException {
+    // ----------------------------
+    // Data-Driven ejemplo
+    // ----------------------------
+    @ParameterizedTest
+    @ValueSource(strings = {"Localidad A", "Localidad B"})
+    void testBrowserActions(String nombreLocalidad) throws IOException {
+
         driver.get("http://157.180.19.137/seleccion");
         SeleccionPage pagina = new SeleccionPage(driver, wait);
 
+        // ----------------------------
+        // Soft Assertions (Verify)
+        // ----------------------------
+        SoftAssertions soft = new SoftAssertions();
+        pagina.verifyTitulo("Tablero", soft);
+
+        // ----------------------------
+        // Assert crítico: detiene test si falla
+        // ----------------------------
+        Assertions.assertTrue(driver.getTitle().contains("Tablero"), "Título de pestaña no esperado");
+
+        // Captura de pantalla
         takeScreenshot("fullpage.png");
 
-        // Validaciones
-        Assertions.assertEquals("Tablero", pagina.getTitulo());
-
-        // Navegación
+        // ----------------------------
+        // Navegación y creación de Localidad (Builder)
+        // ----------------------------
         pagina.irAAdmin();
-        pagina.crearLocalidad("Localidad nueva");
+        Localidad localidad = new Localidad.Builder()
+                .setNombre(nombreLocalidad)
+                .build();
+        pagina.crearLocalidad(localidad.getNombre());
 
-        // Info útil
+        // ----------------------------
+        // Info útil en logs
+        // ----------------------------
         System.out.println("Título: " + driver.getTitle());
         System.out.println("URL actual: " + driver.getCurrentUrl());
         System.out.println("Ventana actual: " + driver.getWindowHandle());
+
+        // ----------------------------
+        // Reporta fallos de soft asserts
+        // ----------------------------
+        soft.assertAll();
     }
 
     @AfterEach
     void tearDown() {
-        // Si quieres mantener el driver vivo entre tests, comenta esta línea
         DriverManager.quitDriver();
     }
 
+    // ----------------------------
     // Métodos utilitarios
+    // ----------------------------
     private void takeScreenshot(String filename) throws IOException {
         File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
         Files.copy(src.toPath(), new File(filename).toPath());

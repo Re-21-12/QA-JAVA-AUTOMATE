@@ -13,81 +13,110 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Duration;
 
-@TestInstance(TestInstance.Lifecycle.PER_CLASS) // Permite reutilizar el driver si quieres
+// Singleton WebDriver
+class DriverManager {
+    private static WebDriver driver;
+    private static WebDriverWait wait;
+
+    private DriverManager() {}
+
+    public static WebDriver getDriver() {
+        if (driver == null) {
+            WebDriverManager.chromedriver().setup();
+            ChromeOptions options = new ChromeOptions();
+            options.addArguments("--window-size=1280,800");
+            driver = new ChromeDriver(options);
+            driver.manage().window().setSize(new Dimension(1280, 800));
+            wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        }
+        return driver;
+    }
+
+    public static WebDriverWait getWait() {
+        if (wait == null) {
+            getDriver();
+        }
+        return wait;
+    }
+
+    public static void quitDriver() {
+        if (driver != null) {
+            driver.quit();
+            driver = null;
+            wait = null;
+        }
+    }
+}
+
+// Page Object para la página de Selección
+class SeleccionPage {
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    private By titulo = By.xpath("/html/body/app-root/header/div[1]/a/span[1]");
+    private By adminLink = By.cssSelector("a.pro-chip:nth-child(2)");
+    private By inputLocalidad = By.cssSelector("section.panel:nth-child(1) > div:nth-child(2) > div:nth-child(1) > input:nth-child(2)");
+    private By submitButton = By.cssSelector("section.panel:nth-child(1) > div:nth-child(2) > div:nth-child(2) > button:nth-child(2)");
+
+    public SeleccionPage(WebDriver driver, WebDriverWait wait) {
+        this.driver = driver;
+        this.wait = wait;
+    }
+
+    public String getTitulo() {
+        return wait.until(ExpectedConditions.visibilityOfElementLocated(titulo)).getText();
+    }
+
+    public void irAAdmin() {
+        driver.findElement(adminLink).click();
+    }
+
+    public void crearLocalidad(String nombre) {
+        driver.findElement(inputLocalidad).sendKeys(nombre);
+        driver.findElement(submitButton).click();
+    }
+}
+
+// Clase de tests
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GoogleTest {
 
     private WebDriver driver;
-    private WebDriverWait wait; // ✅ WebDriverWait para sincronización
-//setup
+    private WebDriverWait wait;
+
     @BeforeEach
     void setUp() {
-        // ✅ WebDriverManager se encarga de descargar y configurar el driver correcto
-        WebDriverManager.chromedriver().setup();
-
-        // ✅ Configuración de opciones de Chrome
-        ChromeOptions options = new ChromeOptions();
-        options.addArguments("--window-size=1280,800");
-        // options.addArguments("--headless"); // Usar en CI/CD si no necesitas interfaz gráfica
-
-        driver = new ChromeDriver(options);
-
-        // ✅ Uso de WebDriverWait para evitar errores por carga lenta
-        // se puede usar con waiting strategies
-        wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-
-        // ✅ Mejor práctica: iniciar siempre en tamaño conocido (consistencia en capturas)
-        driver.manage().window().setSize(new Dimension(1280, 800));
+        driver = DriverManager.getDriver();
+        wait = DriverManager.getWait();
     }
 
     @Test
     void testBrowserActions() throws IOException {
         driver.get("http://157.180.19.137/seleccion");
+        SeleccionPage pagina = new SeleccionPage(driver, wait);
 
+        takeScreenshot("fullpage.png");
 
+        // Validaciones
+        Assertions.assertEquals("Tablero", pagina.getTitulo());
 
-        // ✅ Uso de ExpectedConditions para elementos dinámicos
-        // se usa de la mano con una espera explicita``
-        WebElement elemento = wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.xpath("/html/body/app-root/header/div[1]/a/span[1]")));
-        WebElement elementoPorCssSelector = driver.findElement(By.cssSelector(".pro-brand__title"));
+        // Navegación
+        pagina.irAAdmin();
+        pagina.crearLocalidad("Localidad nueva");
 
-        takeScreenshot("fullpage.png");   // Captura de pantalla general
-        takeScreenshotOfElement(elemento, "h1.png");
-
-        Assertions.assertEquals("Tablero", elemento.getText(), "El texto del elemento no es el esperado.");
-        Assertions.assertEquals("Tablero", elementoPorCssSelector.getText(), "El texto del elemento no es el esperado.");
-
-        // es el titulo del tab
-        System.out.println("Título de la página: " + driver.getTitle());
-
+        // Info útil
+        System.out.println("Título: " + driver.getTitle());
         System.out.println("URL actual: " + driver.getCurrentUrl());
-
-        // ✅ Navegación segura
-        driver.navigate().refresh();
-        driver.navigate().back();
-        driver.navigate().forward();
-
-        WebElement admin = driver.findElement(By.cssSelector("a.pro-chip:nth-child(2)"));
-        Assertions.assertEquals("Admin", "Navegador click con exito");
-        admin.click();
-
-        WebElement inputLocalidad = driver.findElement(By.cssSelector("section.panel:nth-child(1) > div:nth-child(2) > div:nth-child(1) > input:nth-child(2)"));
-        inputLocalidad.sendKeys("Localidad nueva");
-
-        WebElement submitButton = driver.findElement(By.cssSelector("section.panel:nth-child(1) > div:nth-child(2) > div:nth-child(2) > button:nth-child(2)"));
-        submitButton.click();
-        // ✅ Mostrar el handle de la ventana
         System.out.println("Ventana actual: " + driver.getWindowHandle());
     }
 
     @AfterEach
     void tearDown() {
-        if (driver != null) {
-            driver.quit();
-        }
+        // Si quieres mantener el driver vivo entre tests, comenta esta línea
+        DriverManager.quitDriver();
     }
 
-    // ✅ Métodos utilitarios para mantener el test limpio
+    // Métodos utilitarios
     private void takeScreenshot(String filename) throws IOException {
         File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
         Files.copy(src.toPath(), new File(filename).toPath());

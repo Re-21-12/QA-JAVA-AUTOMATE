@@ -18,7 +18,7 @@ class GoogleTest {
 
     private WebDriver driver;
     private WebDriverWait wait; // ✅ WebDriverWait para sincronización
-
+//setup
     @BeforeEach
     void setUp() {
         // ✅ WebDriverManager se encarga de descargar y configurar el driver correcto
